@@ -7,8 +7,8 @@ model = YOLO("yolov8n.pt")
 
 # Only include video 1 and 4
 video_paths = [
-    r"C:\Users\User\OneDrive\Desktop\Ambulance detecting system\video2.mp4",
-    r"C:\Users\User\OneDrive\Desktop\Ambulance detecting system\video4.mp4"
+    r"C:\Users\User\OneDrive\Desktop\Ambulance detecting system\video7.mp4",
+    r"C:\Users\User\OneDrive\Desktop\Ambulance detecting system\video3.mp4"
 ]
 
 # Open both video feeds
@@ -20,6 +20,9 @@ max_frames_video4 = int(fps_video4 * 3)  # 3 seconds limit
 
 # Flags for ambulance detection
 ambulance_detected = [False, False]
+
+# 🔹 NEW: Pause flag
+paused = False
 
 def is_red_ambulance(crop):
     """Check if the detected vehicle is mostly red (red ambulance)."""
@@ -55,53 +58,64 @@ def draw_traffic_light(frame, ambulance_green, index):
 
 while True:
     frames = []
-    for i, cap in enumerate(caps):
-        ret, frame = cap.read()
 
-        # 🔁 LOOP video normally if it ends
-        if not ret:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    # 🔹 NEW: If paused, don't read new frames
+    if not paused:
+        for i, cap in enumerate(caps):
             ret, frame = cap.read()
 
-        # 🎯 SPECIAL: video4 (index 1) → loop after 3 sec
-        if i == 1:
-            current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-            if current_frame >= max_frames_video4:
+            # 🔁 LOOP video normally if it ends
+            if not ret:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ret, frame = cap.read()
 
-        if not ret:
-            frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        else:
-            results = model(frame)
+            # 🎯 SPECIAL: video4 (index 1) → loop after 3 sec
+            if i == 1:
+                current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+                if current_frame >= max_frames_video4:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = cap.read()
 
-            for result in results:
-                for box in result.boxes:
-                    class_id = int(box.cls[0])
-                    label = model.names[class_id]
+            if not ret:
+                frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            else:
+                results = model(frame)
 
-                    if label.lower() == "truck":
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        crop = frame[y1:y2, x1:x2]
+                for result in results:
+                    for box in result.boxes:
+                        class_id = int(box.cls[0])
+                        label = model.names[class_id]
 
-                        if crop.size == 0:
-                            continue
+                        if label.lower() == "truck":
+                            x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            crop = frame[y1:y2, x1:x2]
 
-                        if is_red_ambulance(crop):
-                            ambulance_detected[i] = True
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                            cv2.putText(frame, "Emergency Vehicle", (x1, y1 - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+                            if crop.size == 0:
+                                continue
 
-            draw_traffic_light(frame, ambulance_detected[i], i)
+                            if is_red_ambulance(crop):
+                                ambulance_detected[i] = True
+                                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                                cv2.putText(frame, "Emergency Vehicle", (x1, y1 - 10),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
-        frame = cv2.resize(frame, (640, 480))
-        frames.append(frame)
+                draw_traffic_light(frame, ambulance_detected[i], i)
 
-    combined = np.hstack((frames[0], frames[1]))
+            frame = cv2.resize(frame, (640, 480))
+            frames.append(frame)
+
+        combined = np.hstack((frames[0], frames[1]))
+
+    # 🔹 Show last frame even when paused
     cv2.imshow("Camera 1 & 4 - Ambulance Detection", combined)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    key = cv2.waitKey(1) & 0xFF
+
+    # 🔹 SPACEBAR toggle pause/play
+    if key == 32:
+        paused = not paused
+
+    if key == ord('q'):
         break
 
 for cap in caps:
